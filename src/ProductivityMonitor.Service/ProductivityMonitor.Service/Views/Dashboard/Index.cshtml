@@ -1,0 +1,255 @@
+﻿@{
+    ViewData["Title"] = "Dashboard";
+}
+
+@model DateTime?
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@2.8.0"></script>
+<script src="js/utilities.js"></script>
+<script src="js/api.js"></script>
+
+<div class="container-fluid">
+    <div class="row mb-1">
+        @{
+            var currentDate = Model ?? DateTime.Today;
+            var dayBefore = currentDate.AddDays(-1);
+            var dayAfter = currentDate.AddDays(1);
+
+            <div class="col">
+                <div class="d-flex flex-row">
+                    <div class="mr-auto p-2">
+                        <a asp-action="Index" asp-route-date="@dayBefore">&lt;&lt; @dayBefore.ToLongDateString()</a>
+                    </div>
+                    <div class="ml-auto mr-auto p-2">
+                        <div class="p-2">@currentDate.ToLongDateString()</div>
+                    </div>
+                    <div class="ml-auto">
+                        <a asp-action="Index" asp-route-date="@dayAfter">@dayAfter.ToLongDateString() &gt;&gt;</a>
+                    </div>
+                </div>
+            </div>
+
+        }
+    </div>
+    <div class="row">
+        <div class="col-9">
+            <div class="card">
+                <div class="card-body">
+                    <canvas id="usageChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-3">
+            <div class="row">
+                <div>
+                    Total Recorded Minutes
+                    <div class="h6" id="totalMinutes"></div>
+                </div>
+            </div>
+            <div class="row">
+                <div>
+                    Total Productive Minutes
+                    <div class="h6" id="totalProductiveMinutes"></div>
+                </div>
+            </div>
+            <div class="row">
+                <div>
+                    Total Unproductive Minutes
+                    <div class="h6" id="totalUnproductiveMinutes"></div>
+                </div>
+            </div>
+            <div class="row">
+                <div>
+                    Keyboard KeyPresses
+                    <div class="h6" id="keyPresses"></div>
+                </div>
+            </div>
+            <div class="row">
+                <div>
+                    Mouse Clicks
+                    <div class="h6" id="mouseClicks"></div>
+                </div>
+            </div>
+            <div class="row">
+                <div>
+                    Mouse Distance Traveled in Pixels
+                    <div class="h6" id="mouseDistanceTraveled"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row mt-1">
+        <!--Pie chart-->
+        <div class="col mr-1">
+            <div class="card">
+                <div class="card-body">
+                    <canvas id="applicationDoughnutChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!--Keypress graph-->
+        <div class="col ml-1">
+            <div class="card">
+                <div class="card-body">
+                    <canvas id="keyPressGraph"></canvas>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    <div class="row mt-1">
+        <!--Heat map-->
+        <div class="col">
+            <div class="card">
+                <div class="card-body">
+                    <canvas id="mouseClickHeatMap"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+@{
+    var baseDate = Model ?? DateTime.Today;
+    var startDateString = baseDate.ToString("O");
+    var endDateString = baseDate.AddDays(1).ToString("O");
+
+    <script async>
+
+        var startDate = "@startDateString";
+        var endDate = "@endDateString";
+
+        getApplicationProductivity(startDate, endDate).then(result => {
+
+            setupUsageChart(result);
+            setupApplicationPieChart(result);
+
+            showProductivityInfo(result);
+        });
+
+        function showProductivityInfo(data) {
+
+            let totalMinutes = 0;
+            let productiveMinutes = 0;
+            let unproductiveMinutes = 0;
+
+            for (let element of data) {
+
+                productiveMinutes += element.productiveSeconds / 60;
+                unproductiveMinutes += (element.totalSeconds - element.productiveSeconds) / 60;
+            }
+
+            document.getElementById("totalMinutes").innerHTML = (productiveMinutes +
+                unproductiveMinutes
+            ).toFixed(2);
+            document.getElementById("totalProductiveMinutes").innerHTML = productiveMinutes.toFixed(2);
+            document.getElementById("totalUnproductiveMinutes").innerHTML = unproductiveMinutes.toFixed(2);
+        }
+
+        function setupUsageChart(data) {
+            const context = document.getElementById("usageChart").getContext('2d');
+            const chart = new window.Chart(context,
+                {
+                    type: 'bar',
+
+                    // The data for our data set
+                    data: mapApplicationDataForGraph(data),
+
+                    options: {
+                        responsive: true,
+                        title: {
+                            display: true,
+                            text: 'Productive Time in Applications'
+                        }
+                    }
+                });
+        }
+
+        function setupApplicationPieChart(data) {
+            const context = document.getElementById("applicationDoughnutChart").getContext('2d');
+
+            const doughnutData = mapApplicationDataForDoughnut(data);
+
+            const chart = new Chart(context,
+                {
+                    type: 'doughnut',
+
+                    data: doughnutData,
+                    options: {
+                        responsive: true,
+                        title: {
+                            display: true,
+                            text: "% of Productive and Unproductive Time",
+                        },
+                        legend: {
+                            display: false
+                        }
+                    }
+                });
+        }
+
+        getKeyPressSummary(startDate, endDate).then(result => {
+            var context = document.getElementById("keyPresses");
+            context.innerHTML = `${aggregateKeyPressCount(result)}`;
+
+            setupKeyPressGraph(result);
+        });
+
+        function setupKeyPressGraph(data) {
+            const context = document.getElementById("keyPressGraph").getContext("2d");
+
+            const keyPressData = mapKeyPressesForGraph(data)
+
+            const chart = new Chart(context,
+                {
+                    type: "bar",
+
+                    data: keyPressData,
+
+                    options: {
+                        responsive: true,
+                        title: {
+                            display: true,
+                            text: "Key Press Frequency"
+                        },
+                        legend: {
+                            display: false
+                        }
+                    }
+                });
+        }
+
+
+        GetTotalMouseDistance(startDate, endDate).then(result => {
+            var context = document.getElementById("mouseDistanceTraveled");
+            context.innerHTML = `${result.toFixed(2)}`;
+        });
+
+        getMouseMovementsSummary(startDate, endDate).then(result => {
+            var context = document.getElementById("mouseClicks");
+            context.innerHTML = `${aggregateMouseClicks(result)}`;
+
+            generateHeatMap(result);
+        });
+
+        function generateHeatMap(data) {
+            var context = document.getElementById("mouseClickHeatMap").getContext("2d");
+
+            const chart = new Chart(context,
+                {
+                    type: 'bubble',
+                    data: mapMouseLocationData(data),
+                    options: {
+                        responsive: true,
+                        title: {
+                            display: true,
+                            text: "Mouse Click Coordinate Map"
+                        }
+                    }
+                });
+        }
+
+    </script>
+}
